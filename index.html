@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeonOffice — Autonomous Agent</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Inter',sans-serif;background:#05060a;overflow:hidden;height:100vh}
+        
+        .scene{position:relative;width:100%;height:100vh;overflow:hidden}
+        
+        /* ── Floor ── */
+        .floor{position:absolute;inset:0;background:linear-gradient(180deg,#080a10 0%,#0c0e14 40%,#10121a 100%)}
+        .floor-grid{position:absolute;bottom:0;left:0;right:0;height:65%;background:repeating-linear-gradient(90deg,transparent,transparent 79px,#14161e15 79px,#14161e15 80px),repeating-linear-gradient(0deg,transparent,transparent 79px,#14161e15 79px,#14161e15 80px);transform:perspective(800px) rotateX(55deg);transform-origin:bottom}
+        
+        .glow{position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none}
+        .g1{top:10%;left:20%;width:200px;height:200px;background:#00e67606}
+        .g2{top:30%;right:15%;width:180px;height:180px;background:#448aff06}
+        .g3{bottom:25%;left:40%;width:250px;height:150px;background:#ff910005}
+        
+        /* ── Ticker ── */
+        .ticker{position:absolute;top:0;left:0;right:0;height:28px;background:#080a0f;border-bottom:1px solid #14161e;display:flex;align-items:center;overflow:hidden;z-index:5}
+        .ticker-inner{display:flex;gap:28px;animation:scroll 25s linear infinite;white-space:nowrap}
+        @keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        .tick{font-family:'Space Mono',monospace;font-size:9px;display:flex;align-items:center;gap:5px}
+        .tick-sym{color:#00e676}
+        .tick-up{color:#00e676}
+        .tick-down{color:#ff5252}
+        
+        /* ── Server ── */
+        .server{position:absolute;bottom:20%;width:60px;height:140px;background:#0a0c12;border:1px solid #1a1d27;border-radius:3px}
+        .server-l{left:4%}
+        .server-r{right:4%}
+        .s-slot{width:100%;height:16px;margin:3px 0;padding:3px 5px;background:#080a0e;border:1px solid #14161e;border-radius:2px;display:flex;align-items:center;gap:3px}
+        .s-led{width:3px;height:3px;border-radius:50%}
+        .s-led.on{background:#00e676;box-shadow:0 0 4px #00e676;animation:blink 2s infinite}
+        .s-led.warn{background:#ff9100;box-shadow:0 0 4px #ff9100;animation:blink 1s infinite}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+        .s-bars{display:flex;gap:1px;flex:1}
+        .s-bar{height:1px;background:#14161e;border-radius:1px;flex:1}
+        .s-bar.a{background:#00e67630}
+        
+        /* ── Desk ── */
+        .desk{position:absolute;bottom:18%}
+        .desk-l{left:12%}
+        .desk-r{right:12%}
+        .desk-top{width:140px;height:8px;background:#14161e;border:1px solid #1a1d27;border-radius:2px;position:relative}
+        .desk-monitor{position:absolute;bottom:8px;left:50%;transform:translateX(-50%)}
+        .monitor{width:80px;height:50px;background:#080a0e;border:2px solid #1a1d27;border-radius:3px;position:relative;overflow:hidden}
+        .monitor.active{border-color:#00e676;box-shadow:0 0 15px #00e67620}
+        .monitor-screen{position:absolute;top:3px;left:3px;right:3px;bottom:6px;background:#06080c;border-radius:1px;padding:4px;font-family:'Space Mono',monospace;font-size:5px;color:#00e676}
+        .monitor-stand{width:12px;height:8px;background:#14161e;margin:0 auto}
+        .monitor-base{width:24px;height:3px;background:#1a1d27;border-radius:1px;margin:0 auto}
+        
+        /* ── Whiteboard ── */
+        .whiteboard{position:absolute;top:12%;left:50%;transform:translateX(-50%);width:120px;height:60px;background:#0c0e14;border:2px solid #1a1d27;border-radius:3px;padding:6px;font-family:'Space Mono',monospace;font-size:5px;color:#ff9100;overflow:hidden}
+        .whiteboard.active{border-color:#ff9100;box-shadow:0 0 15px #ff910020}
+        .wb-line{margin-bottom:2px;opacity:0.6}
+        
+        /* ── Coffee ── */
+        .coffee{position:absolute;bottom:19%}
+        .coffee-r{right:22%}
+        .cup{width:10px;height:12px;background:#1a1d27;border-radius:0 0 2px 2px;position:relative}
+        .cup::before{content:'';position:absolute;top:-2px;left:-1px;right:-1px;height:2px;background:#252830;border-radius:1px}
+        .steam{position:absolute;top:-10px;left:2px;width:6px;height:8px;border:1px solid #1a1d27;border-bottom:none;border-radius:3px 3px 0 0;animation:stm 2s infinite}
+        @keyframes stm{0%,100%{opacity:.2;transform:translateY(0)}50%{opacity:.5;transform:translateY(-2px)}}
+        
+        /* ── Robot ── */
+        .robot{position:absolute;transition:left 3s cubic-bezier(.4,0,.2,1),top 3s cubic-bezier(.4,0,.2,1);z-index:10}
+        .robot svg{filter:drop-shadow(0 4px 12px rgba(0,0,0,.6))}
+        .robot-float svg{animation:float 3s ease-in-out infinite}
+        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+        
+        .robot-tag{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#080a0f80;border:1px solid #1a1d27;border-radius:3px;padding:2px 8px;font-family:'Space Mono',monospace;font-size:7px;color:#00e676;letter-spacing:1px;white-space:nowrap}
+        
+        /* ── Thought bubble ── */
+        .thought{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#0c0e14;border:1px solid #1a1d27;border-radius:6px;padding:4px 10px;font-family:'Space Mono',monospace;font-size:6px;color:#e0e0e0;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+        .thought::before{content:'';position:absolute;bottom:100%;left:50%;transform:translateX(-50%);border:4px solid transparent;border-bottom-color:#1a1d27}
+        
+        /* ── Status ── */
+        .status{position:absolute;bottom:0;left:0;right:0;height:24px;background:#080a0f;border-top:1px solid #14161e;display:flex;align-items:center;padding:0 12px;gap:16px;font-family:'Space Mono',monospace;font-size:8px;color:#444;z-index:5}
+        .st-dot{width:4px;height:4px;border-radius:50%;background:#00e676;animation:pulse 2s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+        
+        /* ── Panel (right side) ── */
+        .panel{position:absolute;top:40px;right:10px;width:180px;background:#080a0f80;border:1px solid #14161e;border-radius:6px;padding:10px;font-family:'Space Mono',monospace;font-size:8px;z-index:5}
+        .panel-title{color:#00e676;font-size:9px;letter-spacing:1px;margin-bottom:8px}
+        .panel-row{display:flex;justify-content:space-between;margin-bottom:4px;color:#888}
+        .panel-val{color:#e0e0e0}
+        .panel-val.up{color:#00e676}
+        .panel-val.down{color:#ff5252}
+        .panel-divider{border-top:1px solid #14161e;margin:6px 0}
+        .panel-action{color:#ff9100;font-size:7px;margin-top:4px}
+        
+        /* ── Wall frames ── */
+        .frame{position:absolute;border:1px solid #1a1d27;border-radius:2px;background:#080a0e;overflow:hidden}
+        .f1{top:12%;left:8%;width:50px;height:35px}
+        .f2{top:15%;right:8%;width:40px;height:40px}
+    </style>
+</head>
+<body>
+    <div class="scene">
+        <div class="floor"></div>
+        <div class="floor-grid"></div>
+        <div class="glow g1"></div>
+        <div class="glow g2"></div>
+        <div class="glow g3"></div>
+        
+        <!-- Ticker -->
+        <div class="ticker"><div class="ticker-inner" id="ticker"></div></div>
+        
+        <!-- Panel -->
+        <div class="panel">
+            <div class="panel-title">AGENT STATUS</div>
+            <div class="panel-row"><span>State</span><span class="panel-val" id="p-state">idle</span></div>
+            <div class="panel-row"><span>Station</span><span class="panel-val" id="p-station">center</span></div>
+            <div class="panel-row"><span>Cash</span><span class="panel-val" id="p-cash">$100,000</span></div>
+            <div class="panel-row"><span>Value</span><span class="panel-val" id="p-value">$100,000</span></div>
+            <div class="panel-row"><span>PnL</span><span class="panel-val" id="p-pnl">$0</span></div>
+            <div class="panel-divider"></div>
+            <div class="panel-row"><span>Trades</span><span class="panel-val" id="p-trades">0</span></div>
+            <div class="panel-action" id="p-action">Initializing...</div>
+        </div>
+        
+        <!-- Wall Frames -->
+        <div class="frame f1"><svg viewBox="0 0 50 35" width="100%" height="100%"><polyline points="0,28 8,24 16,26 24,15 32,18 40,10 50,12" fill="none" stroke="#00e67630" stroke-width="1"/></svg></div>
+        <div class="frame f2"><svg viewBox="0 0 40 40" width="100%" height="100%"><circle cx="20" cy="20" r="12" fill="none" stroke="#448aff20" stroke-width="1"/><circle cx="20" cy="20" r="6" fill="none" stroke="#ff910020" stroke-width="1"/></svg></div>
+        
+        <!-- Servers -->
+        <div class="server server-l" id="server-l">
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar a"></div><div class="s-bar"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar"></div><div class="s-bar a"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led warn"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar a"></div><div class="s-bar"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar"></div><div class="s-bar a"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar"></div><div class="s-bar a"></div></div></div>
+        </div>
+        <div class="server server-r" id="server-r">
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led warn"></div><div class="s-bars"><div class="s-bar"></div><div class="s-bar a"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar a"></div><div class="s-bar"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar"></div><div class="s-bar a"></div><div class="s-bar"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar"></div><div class="s-bar a"></div></div></div>
+            <div class="s-slot"><div class="s-led on"></div><div class="s-bars"><div class="s-bar a"></div><div class="s-bar a"></div><div class="s-bar a"></div></div></div>
+        </div>
+        
+        <!-- Desks -->
+        <div class="desk desk-l"><div class="desk-monitor"><div class="monitor" id="mon-l"><div class="monitor-screen" id="mon-l-screen">BTC/USD</div></div><div class="monitor-stand"></div><div class="monitor-base"></div></div><div class="desk-top"></div></div>
+        <div class="desk desk-r"><div class="desk-monitor"><div class="monitor" id="mon-r"><div class="monitor-screen" id="mon-r-screen">PORTFOLIO</div></div><div class="monitor-stand"></div><div class="monitor-base"></div></div><div class="desk-top"></div></div>
+        
+        <!-- Whiteboard -->
+        <div class="whiteboard" id="whiteboard">
+            <div class="wb-line">STRATEGY:</div>
+            <div class="wb-line">- Scan market</div>
+            <div class="wb-line">- Find opportunity</div>
+            <div class="wb-line">- Execute trade</div>
+        </div>
+        
+        <!-- Coffee -->
+        <div class="coffee coffee-r"><div class="cup"><div class="steam"></div></div></div>
+        
+        <!-- Robot -->
+        <div class="robot robot-float" id="robot" style="left:48%;top:55%">
+            <div class="robot-tag" id="robot-tag">AGENT-01</div>
+            <svg width="28" height="36" viewBox="0 0 40 52" fill="none">
+                <circle cx="20" cy="26" r="12" fill="#00e67608"/>
+                <rect x="8" y="16" width="24" height="20" rx="4" fill="#0c0e14" stroke="#00e676" stroke-width="1.5"/>
+                <circle cx="20" cy="26" r="3" fill="#00e676" opacity="0.6"><animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" repeatCount="indefinite"/></circle>
+                <rect x="10" y="4" width="20" height="14" rx="3" fill="#0c0e14" stroke="#00e676" stroke-width="1.5"/>
+                <circle cx="15" cy="10" r="2" fill="#00e676"><animate attributeName="r" values="2;0.5;2" dur="4s" repeatCount="indefinite"/></circle>
+                <circle cx="25" cy="10" r="2" fill="#00e676"><animate attributeName="r" values="2;0.5;2" dur="4s" repeatCount="indefinite"/></circle>
+                <line x1="20" y1="4" x2="20" y2="0" stroke="#00e676" stroke-width="1"/>
+                <circle cx="20" cy="0" r="1.5" fill="#00e676"><animate attributeName="opacity" values="1;0.2;1" dur="1.5s" repeatCount="indefinite"/></circle>
+                <rect x="2" y="20" width="6" height="12" rx="2" fill="#0c0e14" stroke="#00e676" stroke-width="1"/>
+                <rect x="32" y="20" width="6" height="12" rx="2" fill="#0c0e14" stroke="#00e676" stroke-width="1"/>
+                <rect x="12" y="36" width="6" height="10" rx="2" fill="#0c0e14" stroke="#00e676" stroke-width="1"/>
+                <rect x="22" y="36" width="6" height="10" rx="2" fill="#0c0e14" stroke="#00e676" stroke-width="1"/>
+                <rect x="10" y="44" width="10" height="4" rx="2" fill="#00e676" opacity="0.4"/>
+                <rect x="20" y="44" width="10" height="4" rx="2" fill="#00e676" opacity="0.4"/>
+                <ellipse cx="20" cy="50" rx="16" ry="3" fill="#00e676" opacity="0.08"/>
+            </svg>
+            <div class="thought" id="robot-thought">Initializing...</div>
+        </div>
+        
+        <!-- Status -->
+        <div class="status">
+            <div class="st-dot"></div>
+            <span id="status-text">AGENT-01 ONLINE</span>
+            <span>|</span>
+            <span>MISTRAL AI</span>
+            <span>|</span>
+            <span id="clock"></span>
+        </div>
+    </div>
+    
+    <script>
+        // Station positions
+        const stations = {
+            center: {left:'48%', top:'55%'},
+            left_monitor: {left:'14%', top:'45%'},
+            right_monitor: {left:'78%', top:'45%'},
+            center_screen: {left:'48%', top:'48%'},
+            whiteboard: {left:'46%', top:'25%'},
+            coffee: {left:'72%', top:'55%'},
+            server: {left:'6%', top:'40%'},
+        };
+        
+        // Move robot to station
+        function moveRobot(station) {
+            const el = document.getElementById('robot');
+            const pos = stations[station] || stations.center;
+            el.style.left = pos.left;
+            el.style.top = pos.top;
+        }
+        
+        // Update monitors
+        function updateMonitors(state) {
+            const monL = document.getElementById('mon-l-screen');
+            const monR = document.getElementById('mon-r-screen');
+            
+            if (state.current_station === 'left_monitor') {
+                document.getElementById('mon-l').classList.add('active');
+                monL.innerHTML = 'SCANNING...<br>Fetching prices...';
+            } else {
+                document.getElementById('mon-l').classList.remove('active');
+            }
+            
+            if (state.current_station === 'right_monitor') {
+                document.getElementById('mon-r').classList.add('active');
+                monR.innerHTML = `PORTFOLIO<br>$${state.portfolio_value?.toFixed(0)}<br>PnL: $${state.pnl?.toFixed(0)}`;
+            } else {
+                document.getElementById('mon-r').classList.remove('active');
+            }
+        }
+        
+        // Update whiteboard
+        function updateWhiteboard(state) {
+            const wb = document.getElementById('whiteboard');
+            if (state.current_station === 'whiteboard') {
+                wb.classList.add('active');
+                wb.innerHTML = `<div class="wb-line">STRATEGY:</div><div class="wb-line">${state.thought || 'Analyzing...'}</div>`;
+            } else {
+                wb.classList.remove('active');
+            }
+        }
+        
+        // Update panel
+        function updatePanel(state) {
+            document.getElementById('p-state').textContent = state.mood || 'idle';
+            document.getElementById('p-station').textContent = state.current_station || 'center';
+            document.getElementById('p-cash').textContent = '$' + (state.cash || 100000).toLocaleString();
+            document.getElementById('p-value').textContent = '$' + (state.portfolio_value || 100000).toLocaleString();
+            
+            const pnl = state.pnl || 0;
+            const pnlEl = document.getElementById('p-pnl');
+            pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(0);
+            pnlEl.className = 'panel-val ' + (pnl >= 0 ? 'up' : 'down');
+            
+            document.getElementById('p-trades').textContent = state.total_trades || 0;
+            document.getElementById('p-action').textContent = state.thought || 'Idle';
+        }
+        
+        // Clock
+        function tick() {
+            document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {hour12: false}) + ' UTC';
+        }
+        setInterval(tick, 1000);
+        tick();
+        
+        // Load state and update
+        async function update() {
+            try {
+                const resp = await fetch('/agent_state.json');
+                const state = await resp.json();
+                
+                moveRobot(state.current_station || 'center');
+                updateMonitors(state);
+                updateWhiteboard(state);
+                updatePanel(state);
+                
+                document.getElementById('robot-tag').textContent = 'AGENT-01 — ' + (state.mood || 'IDLE').toUpperCase();
+                document.getElementById('robot-thought').textContent = state.thought || 'Idle...';
+                document.getElementById('status-text').textContent = 'AGENT-01 ' + (state.mood || 'ONLINE').toUpperCase();
+            } catch(e) {
+                // State file not yet created
+            }
+        }
+        
+        update();
+        
+        // Demo ticker
+        const tickerData = [
+            {sym:'SOL',price:'$106.40',chg:'+1.4%',dir:'up'},
+            {sym:'WIF',price:'$0.202',chg:'+1.1%',dir:'up'},
+            {sym:'BONK',price:'$0.000003',chg:'+0.2%',dir:'up'},
+            {sym:'POPCAT',price:'$0.053',chg:'-1.4%',dir:'down'},
+            {sym:'TRUMP',price:'$2.54',chg:'-3.8%',dir:'down'},
+            {sym:'FARTCOIN',price:'$0.187',chg:'-3.5%',dir:'down'},
+        ];
+        const ticker = document.getElementById('ticker');
+        const items = [...tickerData, ...tickerData].map(t => 
+            `<span class="tick"><span class="tick-sym">${t.sym}</span> ${t.price} <span class="tick-${t.dir}">${t.chg}</span></span>`
+        ).join('');
+        ticker.innerHTML = items;
+    </script>
+</body>
+</html>
