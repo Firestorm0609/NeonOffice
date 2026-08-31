@@ -12,10 +12,10 @@ DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "agent_state.json"
 
 STATION_POSITIONS = {
-    "center": {"x": 48, "y": 52}, "left_monitor": {"x": 17, "y": 40},
-    "right_monitor": {"x": 81, "y": 40}, "center_screen": {"x": 48, "y": 46},
-    "whiteboard": {"x": 46, "y": 26}, "coffee": {"x": 74, "y": 52},
-    "server": {"x": 6, "y": 38},
+    "center": {"x": 48, "y": 62}, "left_monitor": {"x": 16, "y": 72},
+    "right_monitor": {"x": 84, "y": 72}, "center_screen": {"x": 48, "y": 68},
+    "whiteboard": {"x": 46, "y": 22}, "coffee": {"x": 74, "y": 66},
+    "server": {"x": 6, "y": 64},
 }
 
 STARTING_BALANCE = 100000.0
@@ -34,7 +34,7 @@ def load_state():
     return {"cash": STARTING_BALANCE, "holdings": {}, "total_trades": 0, "mood": "idle",
             "current_station": "center", "last_action": "none", "thought": "Waking up...",
             "portfolio_value": STARTING_BALANCE, "pnl": 0, "pnl_pct": 0,
-            "robot_x": 48, "robot_y": 52, "_cycle_num": 0, "_last_station": "center"}
+            "robot_x": 48, "robot_y": 62, "_cycle_num": 0, "_last_station": "center"}
 
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
