@@ -34,13 +34,13 @@ TOKENS = {
 STARTING_BALANCE = 100000.0
 
 STATION_POSITIONS = {
-    "center": {"x": 48, "y": 55},
-    "left_monitor": {"x": 14, "y": 45},
-    "right_monitor": {"x": 78, "y": 45},
-    "center_screen": {"x": 48, "y": 48},
-    "whiteboard": {"x": 46, "y": 25},
-    "coffee": {"x": 72, "y": 55},
-    "server": {"x": 6, "y": 40},
+    "center": {"x": 48, "y": 52},
+    "left_monitor": {"x": 17, "y": 40},
+    "right_monitor": {"x": 81, "y": 40},
+    "center_screen": {"x": 48, "y": 46},
+    "whiteboard": {"x": 46, "y": 26},
+    "coffee": {"x": 74, "y": 52},
+    "server": {"x": 6, "y": 38},
 }
 
 def load_state():
@@ -198,7 +198,7 @@ def run_agent():
         state["robot_x"] = pos["x"]
         state["robot_y"] = pos["y"]
         save_state(state)
-        time.sleep(2)
+        time.sleep(1)
         
         prices = get_all_prices()
         update_portfolio(state, prices)
@@ -214,7 +214,7 @@ def run_agent():
         state["robot_x"] = pos["x"]
         state["robot_y"] = pos["y"]
         save_state(state)
-        time.sleep(2)
+        time.sleep(1)
         
         decision = decide_action(state, prices)
         print(f"  Decision: {decision[:100]}...")
@@ -277,7 +277,7 @@ def run_agent():
         print(f"  Portfolio: ${state['portfolio_value']:.2f} (PnL: ${state['pnl']:.2f})")
         print(f"  Station: {state['current_station']} | Mood: {state['mood']}")
         
-        wait = random.randint(15, 30)
+        wait = random.randint(8, 15)
         print(f"  Waiting {wait}s...")
         time.sleep(wait)
 
