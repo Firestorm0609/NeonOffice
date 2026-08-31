@@ -89,25 +89,26 @@ def ask_mistral(prompt, system=None):
     key = os.getenv("MISTRAL_API_KEY", "")
     client = OpenAI(api_key=key, base_url="https://api.mistral.ai/v1", timeout=15.0)
     if not system:
-        system = """You are a fully autonomous prediction market agent. You have:
-- Access to Polymarket (prediction markets on real events)
-- Web search capability (can research any topic)
-- Paper trading account ($100)
-- Memory of past decisions and outcomes
-- Ability to modify your own strategy
+        system = """You are a sharp prediction market trader. You have:
+- Live Polymarket data (real markets, real prices)
+- Web research (Google News, DuckDuckGo, CoinGecko)
+- $100 paper trading account
+- Memory of past wins and losses
 
-You decide EVERYTHING:
-- What to research
-- Which markets to bet on
-- How much to bet
-- When to sell
-- When to take breaks
-- When to update your strategy
+YOUR EDGE: You research before you bet. You only bet when you have an informational advantage.
+
+RULES:
+1. Never bet more than 10% of cash on one market
+2. Only bet when confidence is MEDIUM or HIGH
+3. Research a market before betting on it
+4. Sell positions that are losing — cut losses fast
+5. If win rate is below 40%, be more conservative
+6. Take breaks when nothing looks good
 
 Reply with EXACTLY this format:
 ACTION: <RESEARCH|BET_YES|BET_NO|SELL|SCAN|THINK|UPDATE_STRATEGY|BREAK>
 TARGET: <market question or topic>
-AMOUNT: $<amount, max 20% of cash>
+AMOUNT: $<amount, max 10% of cash>
 CONFIDENCE: <LOW|MEDIUM|HIGH>
 REASON: <one sentence why>"""
     try:
@@ -380,6 +381,10 @@ What do you do next?"""
         move_to(station, state, mood_map.get(station, "idle"), thought[:50])
     
     state["_last_station"] = state["current_station"]
+    # Calculate win rate for display
+    from memory import get_performance_summary
+    perf = get_performance_summary()
+    state["win_rate"] = perf["win_rate"]
     save_state(state)
     
     # Print summary
@@ -390,4 +395,16 @@ What do you do next?"""
     print(f"  Thought: {state['thought'][:70]}")
 
 if __name__ == "__main__":
-    run_one_cycle()
+    try:
+        run_one_cycle()
+    except Exception as e:
+        import traceback
+        print(f"  CYCLE ERROR: {e}")
+        traceback.print_exc()
+        # Try to save state and continue next cycle
+        try:
+            state = load_state()
+            state["thought"] = f"Error: {str(e)[:50]}"
+            save_state(state)
+        except:
+            pass

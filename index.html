@@ -115,14 +115,19 @@
         
         <!-- Panel -->
         <div class="panel">
-            <div class="panel-title">AGENT STATUS</div>
+            <div class="panel-title">PREDICTION AGENT</div>
             <div class="panel-row"><span>State</span><span class="panel-val" id="p-state">idle</span></div>
-            <div class="panel-row"><span>Station</span><span class="panel-val" id="p-station">center</span></div>
-            <div class="panel-row"><span>Cash</span><span class="panel-val" id="p-cash">$100,000</span></div>
-            <div class="panel-row"><span>Value</span><span class="panel-val" id="p-value">$100,000</span></div>
+            <div class="panel-row"><span>Category</span><span class="panel-val" id="p-station">trending</span></div>
+            <div class="panel-divider"></div>
+            <div class="panel-row"><span>Cash</span><span class="panel-val" id="p-cash">$100</span></div>
+            <div class="panel-row"><span>Portfolio</span><span class="panel-val" id="p-value">$100</span></div>
             <div class="panel-row"><span>PnL</span><span class="panel-val" id="p-pnl">$0</span></div>
             <div class="panel-divider"></div>
             <div class="panel-row"><span>Trades</span><span class="panel-val" id="p-trades">0</span></div>
+            <div class="panel-row"><span>Win Rate</span><span class="panel-val" id="p-winrate">--</span></div>
+            <div class="panel-divider"></div>
+            <div style="margin:4px 0"><canvas id="pnl-chart" style="width:100%;height:30px"></canvas></div>
+            <div class="panel-divider"></div>
             <div class="panel-action" id="p-action">Initializing...</div>
         </div>
         
@@ -304,18 +309,23 @@
             monR.innerHTML = rhtml;
         }
         
-        // Update whiteboard — always show strategy
+        // Update whiteboard — show strategy + research
         function updateWhiteboard(state) {
             const wb = document.getElementById('whiteboard');
             const atWb = state.current_station === 'whiteboard';
             wb.classList.toggle('active', atWb);
             const cat = (state.category || 'trending').toUpperCase();
             let html = '<div class="wb-line" style="color:#448aff">STRATEGY: ' + cat + '</div>';
-            html += '<div class="wb-line">' + (state.thought || 'Analyzing...').substring(0, 50) + '</div>';
-            html += '<div class="wb-line" style="color:#00e676">Cycle: ' + (state._cycle_num || 0) + '</div>';
-            const trades = state.total_trades || 0;
-            const posCount = Object.keys(state.positions || {}).length;
-            html += '<div class="wb-line">Trades: ' + trades + ' | Pos: ' + posCount + '</div>';
+            html += '<div class="wb-line">' + (state.thought || 'Analyzing...').substring(0, 45) + '</div>';
+            // Show research if available
+            const cache = state.research_cache || {};
+            const keys = Object.keys(cache);
+            if (keys.length > 0) {
+                const latest = cache[keys[keys.length - 1]];
+                html += '<div class="wb-line" style="color:#ff9100;margin-top:2px">RESEARCH:</div>';
+                html += '<div class="wb-line">' + (latest || '').substring(0, 45) + '</div>';
+            }
+            html += '<div class="wb-line" style="color:#00e676;font-size:4px">Cycle ' + (state._cycle_num || 0) + ' | ' + (state.total_trades || 0) + ' trades</div>';
             wb.innerHTML = html;
         }
         
@@ -335,12 +345,38 @@
             document.getElementById('p-action').textContent = state.thought || 'Idle';
         }
         
-        // Clock
+        // Clock + PnL history
+        let pnlHistory = [];
         function tick() {
             document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {hour12: false}) + ' UTC';
         }
         setInterval(tick, 1000);
         tick();
+        
+        // Track PnL history for chart
+        function updatePnlChart(state) {
+            pnlHistory.push(state.pnl || 0);
+            if (pnlHistory.length > 30) pnlHistory.shift();
+            const canvas = document.getElementById('pnl-chart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width = canvas.offsetWidth;
+            const h = canvas.height = canvas.offsetHeight;
+            ctx.clearRect(0, 0, w, h);
+            if (pnlHistory.length < 2) return;
+            const min = Math.min(...pnlHistory) - 5;
+            const max = Math.max(...pnlHistory) + 5;
+            const range = max - min || 1;
+            ctx.strokeStyle = pnlHistory[pnlHistory.length-1] >= 0 ? '#00e676' : '#ff5252';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            pnlHistory.forEach((v, i) => {
+                const x = (i / (pnlHistory.length - 1)) * w;
+                const y = h - ((v - min) / range) * h;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
         
         // Load state and update
         async function update() {
@@ -352,6 +388,7 @@
                 updateMonitors(state);
                 updateWhiteboard(state);
                 updatePanel(state);
+                updatePnlChart(state);
                 
                 document.getElementById('robot-tag').textContent = 'AGENT-01 — ' + (state.mood || 'IDLE').toUpperCase();
                 document.getElementById('robot-thought').textContent = state.thought || 'Idle...';
