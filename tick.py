@@ -84,10 +84,31 @@ def research_market(market):
 # ═══════════════════════════════════════════
 #  AI BRAIN — Mistral decides everything
 # ═══════════════════════════════════════════
+# Load all Mistral keys
+_mistral_keys = []
+for k, v in os.environ.items():
+    if k.startswith("MISTRAL_API_KEY") and v.strip():
+        _mistral_keys.append(v.strip())
+if not _mistral_keys:
+    _mistral_keys = [os.getenv("MISTRAL_API_KEY", "")]
+_key_index = 0
+
 def ask_mistral(prompt, system=None):
+    global _key_index
     from openai import OpenAI
-    key = os.getenv("MISTRAL_API_KEY", "")
-    client = OpenAI(api_key=key, base_url="https://api.mistral.ai/v1", timeout=15.0)
+    last_error = None
+    for attempt in range(len(_mistral_keys)):
+        key = _mistral_keys[(_key_index + attempt) % len(_mistral_keys)]
+        client = OpenAI(api_key=key, base_url="https://api.mistral.ai/v1", timeout=15.0)
+        try:
+            r = client.chat.completions.create(model="mistral-small-latest",
+                messages=[{"role": "system", "content": system or "You are a prediction market trader. Reply with ACTION: and REASON: lines."}, {"role": "user", "content": prompt}],
+                max_tokens=200, temperature=0.8)
+            _key_index = (_key_index + attempt + 1) % len(_mistral_keys)
+            return r.choices[0].message.content or ""
+        except Exception as e:
+            last_error = e
+    return f"ACTION: THINK\nREASON: All {len(_mistral_keys)} keys failed: {last_error}"
     if not system:
         system = """You are a sharp prediction market trader. You have:
 - Live Polymarket data (real markets, real prices)
@@ -111,13 +132,7 @@ TARGET: <market question or topic>
 AMOUNT: $<amount, max 10% of cash>
 CONFIDENCE: <LOW|MEDIUM|HIGH>
 REASON: <one sentence why>"""
-    try:
-        r = client.chat.completions.create(model="mistral-small-latest",
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            max_tokens=200, temperature=0.8)
-        return r.choices[0].message.content or ""
-    except Exception as e:
-        return f"ACTION: THINK\nREASON: API error: {e}"
+
 
 def parse_decision(response):
     result = {"action": "think", "target": "", "amount": 0, "confidence": "LOW", "reason": ""}
