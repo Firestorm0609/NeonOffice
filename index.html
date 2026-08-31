@@ -198,31 +198,55 @@
     </div>
     
     <script>
-        // Station positions
-        const stations = {
-            center: {left:'48%', top:'62%'},
-            left_monitor: {left:'16%', top:'72%'},
-            right_monitor: {left:'84%', top:'72%'},
-            center_screen: {left:'48%', top:'68%'},
-            whiteboard: {left:'46%', top:'22%'},
-            coffee: {left:'74%', top:'66%'},
-            server: {left:'6%', top:'64%'},
-        };
+        // Calculate station positions from actual DOM elements
+        function getStationPos(name) {
+            const scene = document.querySelector('.scene');
+            const sw = scene.clientWidth;
+            const sh = scene.clientHeight;
+            
+            if (name === 'left_monitor') {
+                const el = document.getElementById('mon-l');
+                const r = el.getBoundingClientRect();
+                return { x: ((r.left + r.width/2) / sw * 100), y: ((r.top + r.height*1.2) / sh * 100) };
+            }
+            if (name === 'right_monitor') {
+                const el = document.getElementById('mon-r');
+                const r = el.getBoundingClientRect();
+                return { x: ((r.left + r.width/2) / sw * 100), y: ((r.top + r.height*1.2) / sh * 100) };
+            }
+            if (name === 'whiteboard') {
+                const el = document.getElementById('whiteboard');
+                const r = el.getBoundingClientRect();
+                return { x: ((r.left + r.width/2) / sw * 100), y: ((r.top + r.height*0.8) / sh * 100) };
+            }
+            if (name === 'server') {
+                const el = document.getElementById('server-l');
+                const r = el.getBoundingClientRect();
+                return { x: ((r.left + r.width/2) / sw * 100), y: ((r.top + r.height) / sh * 100) };
+            }
+            if (name === 'coffee') {
+                const el = document.querySelector('.coffee');
+                const r = el.getBoundingClientRect();
+                return { x: ((r.left + r.width/2) / sw * 100), y: ((r.top) / sh * 100) };
+            }
+            if (name === 'center_screen') {
+                return { x: 50, y: 68 };
+            }
+            return { x: 50, y: 65 };
+        }
         
         let firstLoad = true;
         
         // Move robot to position
         function moveRobot(state) {
             const el = document.getElementById('robot');
-            const x = state.robot_x ?? 48;
-            const y = state.robot_y ?? 55;
+            const station = state.current_station || 'center';
+            const pos = getStationPos(station);
             
             if (firstLoad) {
-                // First load: snap instantly, no animation
                 el.classList.add('no-transition');
-                el.style.left = x + '%';
-                el.style.top = y + '%';
-                // Re-enable transitions after a frame
+                el.style.left = pos.x + '%';
+                el.style.top = pos.y + '%';
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
                         el.classList.remove('no-transition');
@@ -230,9 +254,8 @@
                 });
                 firstLoad = false;
             } else {
-                // Subsequent loads: animate to new position
-                el.style.left = x + '%';
-                el.style.top = y + '%';
+                el.style.left = pos.x + '%';
+                el.style.top = pos.y + '%';
             }
         }
         
