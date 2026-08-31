@@ -20,7 +20,7 @@ STATION_POSITIONS = {
     "server": {"x": 6, "y": 64},
 }
 
-STARTING_BALANCE = 10000.0  # $10K paper money
+STARTING_BALANCE = 100.0  # $10K paper money
 
 def load_state():
     if STATE_FILE.exists():

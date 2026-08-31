@@ -259,43 +259,72 @@
             }
         }
         
-        // Update monitors
+        // Update monitors — always show live data
         function updateMonitors(state) {
             const monL = document.getElementById('mon-l-screen');
             const monR = document.getElementById('mon-r-screen');
+            const atLeft = state.current_station === 'left_monitor';
+            const atRight = state.current_station === 'right_monitor';
             
-            if (state.current_station === 'left_monitor') {
-                document.getElementById('mon-l').classList.add('active');
-                monL.innerHTML = 'SCANNING...<br>Fetching prices...';
+            // Left monitor: show live Polymarket markets
+            document.getElementById('mon-l').classList.toggle('active', atLeft);
+            const markets = state.active_markets || [];
+            if (markets.length > 0) {
+                let html = '<div style="color:#448aff;margin-bottom:2px">POLYMARKET</div>';
+                markets.slice(0, 4).forEach(m => {
+                    const yes = (m.yes * 100).toFixed(0);
+                    const no = (m.no * 100).toFixed(0);
+                    html += '<div style="margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + 
+                            m.q.substring(0, 28) + '</div>';
+                    html += '<div style="color:#00e676;font-size:4px">YES ' + yes + '% | NO ' + no + '%</div>';
+                });
+                monL.innerHTML = html;
             } else {
-                document.getElementById('mon-l').classList.remove('active');
+                monL.innerHTML = '<div style="color:#448aff">POLYMARKET</div>Scanning markets...';
             }
             
-            if (state.current_station === 'right_monitor') {
-                document.getElementById('mon-r').classList.add('active');
-                monR.innerHTML = `PORTFOLIO<br>$${state.portfolio_value?.toFixed(0)}<br>PnL: $${state.pnl?.toFixed(0)}`;
+            // Right monitor: show portfolio & positions
+            document.getElementById('mon-r').classList.toggle('active', atRight);
+            const positions = state.positions || {};
+            const posKeys = Object.keys(positions);
+            let rhtml = '<div style="color:#448aff;margin-bottom:2px">PORTFOLIO</div>';
+            rhtml += '<div>Cash: $' + (state.cash || 0).toFixed(0) + '</div>';
+            rhtml += '<div>Value: $' + (state.portfolio_value || 0).toFixed(0) + '</div>';
+            const pnl = state.pnl || 0;
+            rhtml += '<div style="color:' + (pnl >= 0 ? '#00e676' : '#ff5252') + '">PnL: $' + pnl.toFixed(2) + '</div>';
+            if (posKeys.length > 0) {
+                rhtml += '<div style="color:#ff9100;margin-top:2px">POSITIONS</div>';
+                posKeys.slice(0, 3).forEach(k => {
+                    const p = positions[k];
+                    rhtml += '<div>' + p.side + ' ' + p.question.substring(0, 22) + '</div>';
+                });
             } else {
-                document.getElementById('mon-r').classList.remove('active');
+                rhtml += '<div style="color:#666;margin-top:2px">No positions</div>';
             }
+            monR.innerHTML = rhtml;
         }
         
-        // Update whiteboard
+        // Update whiteboard — always show strategy
         function updateWhiteboard(state) {
             const wb = document.getElementById('whiteboard');
-            if (state.current_station === 'whiteboard') {
-                wb.classList.add('active');
-                wb.innerHTML = `<div class="wb-line">STRATEGY:</div><div class="wb-line">${state.thought || 'Analyzing...'}</div>`;
-            } else {
-                wb.classList.remove('active');
-            }
+            const atWb = state.current_station === 'whiteboard';
+            wb.classList.toggle('active', atWb);
+            const cat = (state.category || 'trending').toUpperCase();
+            let html = '<div class="wb-line" style="color:#448aff">STRATEGY: ' + cat + '</div>';
+            html += '<div class="wb-line">' + (state.thought || 'Analyzing...').substring(0, 50) + '</div>';
+            html += '<div class="wb-line" style="color:#00e676">Cycle: ' + (state._cycle_num || 0) + '</div>';
+            const trades = state.total_trades || 0;
+            const posCount = Object.keys(state.positions || {}).length;
+            html += '<div class="wb-line">Trades: ' + trades + ' | Pos: ' + posCount + '</div>';
+            wb.innerHTML = html;
         }
         
         // Update panel
         function updatePanel(state) {
             document.getElementById('p-state').textContent = state.mood || 'idle';
-            document.getElementById('p-station').textContent = state.current_station || 'center';
-            document.getElementById('p-cash').textContent = '$' + (state.cash || 100000).toLocaleString();
-            document.getElementById('p-value').textContent = '$' + (state.portfolio_value || 100000).toLocaleString();
+            document.getElementById('p-station').textContent = (state.category || 'trending').toUpperCase() + ' | ' + (state.current_station || 'center');
+            document.getElementById('p-cash').textContent = '$' + (state.cash || 0).toFixed(2);
+            document.getElementById('p-value').textContent = '$' + (state.portfolio_value || 0).toFixed(2);
             
             const pnl = state.pnl || 0;
             const pnlEl = document.getElementById('p-pnl');
