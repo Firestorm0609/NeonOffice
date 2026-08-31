@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NeonOffice — Autonomous Agent</title>
-    <meta http-equiv="refresh" content="5">
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap');
         *{margin:0;padding:0;box-sizing:border-box}
@@ -70,6 +70,7 @@
         
         /* ── Robot ── */
         .robot{position:absolute;transition:left 3s cubic-bezier(.4,0,.2,1),top 3s cubic-bezier(.4,0,.2,1);z-index:10}
+        .robot.no-transition{transition:none !important}
         .robot svg{filter:drop-shadow(0 4px 12px rgba(0,0,0,.6))}
         .robot-float svg{animation:float 3s ease-in-out infinite}
         @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
@@ -163,7 +164,7 @@
         <div class="coffee coffee-r"><div class="cup"><div class="steam"></div></div></div>
         
         <!-- Robot -->
-        <div class="robot robot-float" id="robot" style="left:48%;top:55%">
+        <div class="robot robot-float no-transition" id="robot" style="left:48%;top:55%">
             <div class="robot-tag" id="robot-tag">AGENT-01</div>
             <svg width="28" height="36" viewBox="0 0 40 52" fill="none">
                 <circle cx="20" cy="26" r="12" fill="#00e67608"/>
@@ -208,12 +209,31 @@
             server: {left:'6%', top:'40%'},
         };
         
-        // Move robot to station
-        function moveRobot(station) {
+        let firstLoad = true;
+        
+        // Move robot to position
+        function moveRobot(state) {
             const el = document.getElementById('robot');
-            const pos = stations[station] || stations.center;
-            el.style.left = pos.left;
-            el.style.top = pos.top;
+            const x = state.robot_x ?? 48;
+            const y = state.robot_y ?? 55;
+            
+            if (firstLoad) {
+                // First load: snap instantly, no animation
+                el.classList.add('no-transition');
+                el.style.left = x + '%';
+                el.style.top = y + '%';
+                // Re-enable transitions after a frame
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        el.classList.remove('no-transition');
+                    });
+                });
+                firstLoad = false;
+            } else {
+                // Subsequent loads: animate to new position
+                el.style.left = x + '%';
+                el.style.top = y + '%';
+            }
         }
         
         // Update monitors
@@ -276,7 +296,7 @@
                 const resp = await fetch('/agent_state.json');
                 const state = await resp.json();
                 
-                moveRobot(state.current_station || 'center');
+                moveRobot(state);
                 updateMonitors(state);
                 updateWhiteboard(state);
                 updatePanel(state);
@@ -289,7 +309,9 @@
             }
         }
         
-        update();
+
+        // Poll every 3 seconds instead of full page reload
+        setInterval(update, 3000);
         
         // Demo ticker
         const tickerData = [
