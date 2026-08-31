@@ -61,15 +61,22 @@ def search_web(query):
     return web_search_and_summarize(query)
 
 def research_market(market):
-    """Deep research on a specific market."""
-    from research import search_news, get_market_details
+    """Deep research on a specific market — uses all free sources."""
+    from research import research_topic, polymarket_description
     question = market.get("question", "")
-    # Search for news about this event
-    news = search_news(question, 2)
-    news_text = " ".join([f"{n['title']}: {n['snippet']}" for n in news])
+    market_id = market.get("id", "")
+    
+    # Get Polymarket's own description
+    desc_data = polymarket_description(market_id) if market_id else {}
+    description = desc_data.get("description", "")
+    
+    # Full research: Google News + DuckDuckGo + CoinGecko
+    result = research_topic(question, description)
     return {
         "question": question,
-        "news": news_text[:500],
+        "summary": result["summary"][:600],
+        "news_count": len(result["news"]),
+        "web_count": len(result["web"]),
         "yes_price": market.get("yes_price", 0),
         "volume": market.get("volume_24h", 0),
     }
@@ -330,10 +337,20 @@ What do you do next?"""
     elif decision["action"] == "research":
         move_to("whiteboard", state, "researching", f"Researching: {decision['target'][:40]}")
         save_state(state)
-        # Actually research via web
-        research_result = search_web(decision["target"] or "prediction markets")
-        state["research_cache"][decision["target"][:30]] = research_result[:200]
-        state["thought"] = f"Found info: {research_result[:60]}"
+        # Deep research — find matching market and research it
+        target_market = None
+        for m in markets:
+            if decision["target"].lower()[:20] in m["question"].lower():
+                target_market = m
+                break
+        if target_market:
+            research = research_market(target_market)
+            state["research_cache"][target_market["id"][:10]] = research["summary"][:300]
+            state["thought"] = f"Researched: {research['news_count']} news, {research['web_count']} web results"
+        else:
+            research_result = search_web(decision["target"] or "prediction markets")
+            state["research_cache"][decision["target"][:20]] = research_result[:200]
+            state["thought"] = f"Web search: {research_result[:60]}"
     
     elif decision["action"] == "update_strategy":
         move_to("server", state, "self-modifying", "Updating my own strategy...")
