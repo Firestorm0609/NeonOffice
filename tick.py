@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Prediction Market Agent — scans Polymarket, analyzes with Mistral, paper trades."""
+"""
+Fully Autonomous Prediction Market Agent
+- Scans Polymarket for opportunities
+- Researches events via web
+- Makes decisions with Mistral
+- Learns from outcomes
+- Modifies its own strategy
+"""
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -10,8 +17,6 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "agent_state.json"
-PORTFOLIO_FILE = DATA_DIR / "portfolio.json"
-TRADES_FILE = DATA_DIR / "trades.jsonl"
 
 STATION_POSITIONS = {
     "center": {"x": 50, "y": 65}, "left_monitor": {"x": 16, "y": 72},
@@ -20,7 +25,7 @@ STATION_POSITIONS = {
     "server": {"x": 6, "y": 64},
 }
 
-STARTING_BALANCE = 100.0  # $10K paper money
+STARTING_BALANCE = 100.0
 
 def load_state():
     if STATE_FILE.exists():
@@ -29,14 +34,11 @@ def load_state():
             "current_station": "center", "last_action": "none", "thought": "Waking up...",
             "portfolio_value": STARTING_BALANCE, "pnl": 0, "pnl_pct": 0,
             "robot_x": 50, "robot_y": 65, "_cycle_num": 0, "_last_station": "center",
-            "active_markets": [], "category": "trending"}
+            "active_markets": [], "category": "trending", "research_cache": {},
+            "discovered_categories": ["crypto", "politics", "sports", "science", "entertainment"]}
 
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
-
-def log_trade(trade):
-    with open(TRADES_FILE, "a") as f:
-        f.write(json.dumps(trade) + "\n")
 
 def move_to(station, state, mood, thought):
     state["current_station"] = station
@@ -46,46 +48,82 @@ def move_to(station, state, mood, thought):
     state["robot_x"] = pos["x"]
     state["robot_y"] = pos["y"]
 
-def fetch_markets(category="trending", limit=8):
-    """Fetch markets from Polymarket."""
-    from polymarket import get_trending, get_crypto_markets, get_politics_markets
-    if category == "crypto":
-        return get_crypto_markets()[:limit]
-    elif category == "politics":
-        return get_politics_markets()[:limit]
-    else:
-        return get_trending(limit)
+# ═══════════════════════════════════════════
+#  FETCHING — what markets exist
+# ═══════════════════════════════════════════
+def fetch_markets(category=None, limit=10):
+    from polymarket import get_markets
+    tag = category if category and category != "trending" else None
+    return get_markets(limit=limit, tag=tag, min_volume=2000)
 
-def ask_mistral(prompt):
+def search_web(query):
+    from research import search_news, web_search_and_summarize
+    return web_search_and_summarize(query)
+
+def research_market(market):
+    """Deep research on a specific market."""
+    from research import search_news, get_market_details
+    question = market.get("question", "")
+    # Search for news about this event
+    news = search_news(question, 2)
+    news_text = " ".join([f"{n['title']}: {n['snippet']}" for n in news])
+    return {
+        "question": question,
+        "news": news_text[:500],
+        "yes_price": market.get("yes_price", 0),
+        "volume": market.get("volume_24h", 0),
+    }
+
+# ═══════════════════════════════════════════
+#  AI BRAIN — Mistral decides everything
+# ═══════════════════════════════════════════
+def ask_mistral(prompt, system=None):
     from openai import OpenAI
     key = os.getenv("MISTRAL_API_KEY", "")
-    client = OpenAI(api_key=key, base_url="https://api.mistral.ai/v1", timeout=12.0)
-    r = client.chat.completions.create(model="mistral-small-latest",
-        messages=[{"role": "system", "content": """You are a prediction market analyst. You analyze events and decide probability outcomes.
+    client = OpenAI(api_key=key, base_url="https://api.mistral.ai/v1", timeout=15.0)
+    if not system:
+        system = """You are a fully autonomous prediction market agent. You have:
+- Access to Polymarket (prediction markets on real events)
+- Web search capability (can research any topic)
+- Paper trading account ($100)
+- Memory of past decisions and outcomes
+- Ability to modify your own strategy
+
+You decide EVERYTHING:
+- What to research
+- Which markets to bet on
+- How much to bet
+- When to sell
+- When to take breaks
+- When to update your strategy
 
 Reply with EXACTLY this format:
-ACTION: <BUY_YES|BUY_NO|SELL|SKIP|RESEARCH>
-MARKET: <market question, abbreviated>
-AMOUNT: $<dollar amount to bet, max 20% of portfolio>
+ACTION: <RESEARCH|BET_YES|BET_NO|SELL|SCAN|THINK|UPDATE_STRATEGY|BREAK>
+TARGET: <market question or topic>
+AMOUNT: $<amount, max 20% of cash>
 CONFIDENCE: <LOW|MEDIUM|HIGH>
-REASON: <one sentence why>"""}, {"role": "user", "content": prompt}],
-        max_tokens=200, temperature=0.7)
-    return r.choices[0].message.content or ""
+REASON: <one sentence why>"""
+    try:
+        r = client.chat.completions.create(model="mistral-small-latest",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            max_tokens=200, temperature=0.8)
+        return r.choices[0].message.content or ""
+    except Exception as e:
+        return f"ACTION: THINK\nREASON: API error: {e}"
 
 def parse_decision(response):
-    result = {"action": "skip", "market": "", "amount": 0, "confidence": "LOW", "reason": ""}
+    result = {"action": "think", "target": "", "amount": 0, "confidence": "LOW", "reason": ""}
     for line in response.split("\n"):
         line = line.strip()
         upper = line.upper()
         if upper.startswith("ACTION:"):
             content = line.split(":", 1)[1].strip().upper()
-            if "BUY_YES" in content: result["action"] = "buy_yes"
-            elif "BUY_NO" in content: result["action"] = "buy_no"
-            elif "SELL" in content: result["action"] = "sell"
-            elif "RESEARCH" in content: result["action"] = "research"
-            else: result["action"] = "skip"
-        elif upper.startswith("MARKET:"):
-            result["market"] = line.split(":", 1)[1].strip()
+            for act in ["RESEARCH", "BET_YES", "BET_NO", "SELL", "SCAN", "THINK", "UPDATE_STRATEGY", "BREAK"]:
+                if act in content:
+                    result["action"] = act.lower()
+                    break
+        elif upper.startswith("TARGET:"):
+            result["target"] = line.split(":", 1)[1].strip()
         elif upper.startswith("AMOUNT:"):
             try:
                 amt = line.split(":", 1)[1].strip().replace("$", "").replace(",", "")
@@ -97,176 +135,242 @@ def parse_decision(response):
             result["reason"] = line.split(":", 1)[1].strip()
     return result
 
-def execute_paper_trade(state, decision, markets):
-    """Execute a paper trade on a prediction market."""
-    # Find the market
+# ═══════════════════════════════════════════
+#  EXECUTION — carry out decisions
+# ═══════════════════════════════════════════
+def execute_trade(state, action, target, amount, markets):
+    """Find a market and place a paper bet."""
+    # Find matching market
     market = None
     for m in markets:
-        if decision["market"].lower()[:30] in m["question"].lower() or m["question"].lower()[:30] in decision["market"].lower():
+        if target.lower()[:25] in m["question"].lower() or m["question"].lower()[:25] in target.lower():
             market = m
             break
-    
     if not market:
-        return f"Market not found: {decision['market'][:40]}"
+        # Try fuzzy match
+        target_words = set(target.lower().split())
+        for m in markets:
+            q_words = set(m["question"].lower().split())
+            if len(target_words & q_words) >= 3:
+                market = m
+                break
+    if not market:
+        return f"Market not found: {target[:40]}"
     
-    amount = min(decision["amount"], state["cash"] * 0.2)  # Max 20% per trade
-    if amount < 1:
+    # Cap bet at 20% of cash
+    from memory import load_strategy
+    strat = load_strategy()
+    max_bet = state["cash"] * strat.get("max_bet_pct", 0.20)
+    amount = min(amount, max_bet, state["cash"] * 0.20)
+    if amount < 0.50:
         return "Amount too small"
     
-    if decision["action"] == "buy_yes":
-        shares = amount / market["yes_price"] if market["yes_price"] > 0 else 0
-        if shares <= 0: return "Invalid price"
+    if action == "bet_yes":
+        price = market["yes_price"]
+        if price <= 0 or price >= 1: return "Invalid price"
+        shares = amount / price
         state["cash"] -= amount
-        key = f"YES_{market['id'][:8]}"
-        if key in state["positions"]:
-            pos = state["positions"][key]
-            old_cost = pos["shares"] * pos["avg_price"]
-            pos["shares"] += shares
-            pos["avg_price"] = (old_cost + amount) / pos["shares"]
-        else:
-            state["positions"][key] = {
-                "shares": shares, "avg_price": market["yes_price"],
-                "side": "YES", "question": market["question"][:60],
-                "market_id": market["id"], "current_price": market["yes_price"],
-            }
+        key = f"Y_{market['id'][:8]}"
+        state["positions"][key] = {
+            "shares": shares, "avg_price": price, "side": "YES",
+            "question": market["question"][:60], "market_id": market["id"],
+            "current_price": price, "bet_amount": amount,
+        }
         state["total_trades"] += 1
-        log_trade({"action": "BUY YES", "market": market["question"][:60], "amount": amount,
-                    "price": market["yes_price"], "shares": shares, "time": datetime.now().isoformat()})
-        return f"Bought {shares:.0f} YES shares on '{market['question'][:40]}' @ ${market['yes_price']:.3f} (${amount:.2f})"
+        return f"Bought {shares:.0f} YES on '{market['question'][:40]}' @ ${price:.3f} (${amount:.2f})"
     
-    elif decision["action"] == "buy_no":
-        shares = amount / market["no_price"] if market["no_price"] > 0 else 0
-        if shares <= 0: return "Invalid price"
+    elif action == "bet_no":
+        no_price = 1 - market["yes_price"]
+        if no_price <= 0 or no_price >= 1: return "Invalid price"
+        shares = amount / no_price
         state["cash"] -= amount
-        key = f"NO_{market['id'][:8]}"
-        if key in state["positions"]:
-            pos = state["positions"][key]
-            old_cost = pos["shares"] * pos["avg_price"]
-            pos["shares"] += shares
-            pos["avg_price"] = (old_cost + amount) / pos["shares"]
-        else:
-            state["positions"][key] = {
-                "shares": shares, "avg_price": market["no_price"],
-                "side": "NO", "question": market["question"][:60],
-                "market_id": market["id"], "current_price": market["no_price"],
-            }
+        key = f"N_{market['id'][:8]}"
+        state["positions"][key] = {
+            "shares": shares, "avg_price": no_price, "side": "NO",
+            "question": market["question"][:60], "market_id": market["id"],
+            "current_price": no_price, "bet_amount": amount,
+        }
         state["total_trades"] += 1
-        log_trade({"action": "BUY NO", "market": market["question"][:60], "amount": amount,
-                    "price": market["no_price"], "shares": shares, "time": datetime.now().isoformat()})
-        return f"Bought {shares:.0f} NO shares on '{market['question'][:40]}' @ ${market['no_price']:.3f} (${amount:.2f})"
+        return f"Bought {shares:.0f} NO on '{market['question'][:40]}' @ ${no_price:.3f} (${amount:.2f})"
     
-    elif decision["action"] == "sell":
-        # Find and sell position
+    elif action == "sell":
         for key, pos in list(state["positions"].items()):
-            if decision["market"].lower()[:30] in pos.get("question", "").lower():
+            if target.lower()[:25] in pos.get("question", "").lower():
                 sell_price = pos.get("current_price", pos["avg_price"])
                 proceeds = pos["shares"] * sell_price
                 state["cash"] += proceeds
-                pnl = proceeds - (pos["shares"] * pos["avg_price"])
+                pnl = proceeds - pos["bet_amount"]
                 del state["positions"][key]
                 state["total_trades"] += 1
-                log_trade({"action": "SELL", "market": pos["question"][:60], "amount": proceeds,
-                            "pnl": pnl, "time": datetime.now().isoformat()})
-                return f"Sold position on '{pos['question'][:40]}' for ${proceeds:.2f} (PnL: ${pnl:+.2f})"
+                from memory import record_decision, record_outcome
+                record_outcome(len(load_memory()["decisions"]) - 1, pnl, pnl > 0)
+                return f"Sold '{pos['question'][:40]}' for ${proceeds:.2f} (PnL: ${pnl:+.2f})"
         return "No position found to sell"
     
-    return f"Action: {decision['action']}"
+    return f"Unknown action: {action}"
 
 def update_portfolio(state, markets):
-    """Update portfolio value with current market prices."""
     total = state["cash"]
     for key, pos in state["positions"].items():
-        # Find current price from markets
         for m in markets:
             if pos.get("market_id") == m["id"]:
                 if pos["side"] == "YES":
                     pos["current_price"] = m["yes_price"]
                 else:
-                    pos["current_price"] = m["no_price"]
+                    pos["current_price"] = 1 - m["yes_price"]
                 break
         pos["value"] = pos["shares"] * pos.get("current_price", pos["avg_price"])
-        total += pos["value"]
+        total += pos.get("value", 0)
     state["portfolio_value"] = total
     state["pnl"] = total - STARTING_BALANCE
     state["pnl_pct"] = (state["pnl"] / STARTING_BALANCE) * 100
 
+# ═══════════════════════════════════════════
+#  MAIN LOOP — one autonomous cycle
+# ═══════════════════════════════════════════
 def run_one_cycle():
+    from memory import load_memory, record_decision, get_performance_summary, self_modify_strategy, load_strategy
     state = load_state()
+    mem = load_memory()
+    strat = load_strategy()
     cycle = state.get("_cycle_num", 0) + 1
     state["_cycle_num"] = cycle
     
-    # Rotate categories
-    categories = ["trending", "crypto", "politics", "trending", "crypto"]
-    state["category"] = categories[cycle % len(categories)]
-    
     # Step 1: Scan markets (left monitor)
-    move_to("left_monitor", state, "scanning", f"Scanning {state['category']} markets...")
+    move_to("left_monitor", state, "scanning", "Scanning prediction markets...")
     save_state(state)
-    markets = fetch_markets(state["category"])
+    
+    # Fetch from multiple categories to discover variety
+    all_markets = []
+    cats = state.get("discovered_categories", ["crypto", "politics"])
+    for cat in random.sample(cats, min(2, len(cats))):
+        all_markets.extend(fetch_markets(cat, 5))
+    # Deduplicate
+    seen = set()
+    markets = []
+    for m in all_markets:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            markets.append(m)
+    markets = markets[:10]
+    
     state["active_markets"] = [{"q": m["question"][:50], "yes": m["yes_price"], "vol": m["volume_24h"]} for m in markets[:5]]
     update_portfolio(state, markets)
     
-    # Step 2: Think (center)
-    move_to("center", state, "thinking", "Analyzing prediction opportunities...")
+    # Step 2: Get memory context
+    perf = get_performance_summary()
+    positions_summary = ", ".join([
+        f"{p['side']} on '{p['question'][:25]}' (${p.get('bet_amount',0):.0f})"
+        for p in state["positions"].values()
+    ]) or "None"
+    
+    # Step 3: Ask Mistral — full autonomous decision
+    move_to("center", state, "thinking", "Analyzing everything...")
     save_state(state)
     
-    # Step 3: Ask Mistral to analyze
-    holdings_text = "None" if not state["positions"] else ", ".join(
-        f"{p['side']} on '{p['question'][:30]}' ({p['shares']:.0f} sh @ ${p['avg_price']:.3f})" 
-        for p in state["positions"].values())
-    
     markets_text = "\n".join([
-        f"  {i+1}. {m['question'][:60]}  YES: ${m['yes_price']:.3f}  NO: ${m['no_price']:.3f}  Vol: ${m['volume_24h']:,.0f}"
-        for i, m in enumerate(markets[:6])
+        f"  {m['question'][:55]}  YES: ${m['yes_price']:.3f}  Vol: ${m['volume_24h']:,.0f}"
+        for m in markets[:6]
     ])
     
-    prompt = f"""Cash: ${state['cash']:.2f} | Portfolio: ${state['portfolio_value']:.2f} | PnL: ${state['pnl']:.2f}
-Open positions: {holdings_text}
+    prompt = f"""CYCLE {cycle} — AUTONOMOUS DECISION
 
-Active {state['category']} markets:
+CASH: ${state['cash']:.2f} | PORTFOLIO: ${state['portfolio_value']:.2f} | PnL: ${state['pnl']:+.2f}
+POSITIONS: {positions_summary}
+
+MARKETS:
 {markets_text}
 
-Analyze these prediction markets. Look for:
-1. Events where you think the crowd is wrong about probability
-2. High-volume markets with good liquidity
-3. Events you can research and form an opinion on
+PAST PERFORMANCE:
+  Wins: {perf['wins']} | Losses: {perf['losses']} | Win Rate: {perf['win_rate']}
+  Total PnL: {perf['total_pnl']}
+  Best categories: {json.dumps(perf['patterns'])}
+  Recent learnings: {'; '.join([l['insight'] for l in perf['learnings'][-3:]]) or 'None yet'}
 
-Decide: buy YES, buy NO, sell a position, research more, or skip this cycle."""
-    
+STRATEGY: Max bet {strat['max_bet_pct']:.0%} | Min vol ${strat['min_volume']:,} | Risk: {strat['risk_tolerance']}
+
+You are autonomous. Decide what to do:
+- RESEARCH a specific market deeper (web search for info)
+- BET YES or BET NO on a market
+- SELL a position that's doing well or poorly
+- SCAN different categories
+- THINK about your strategy
+- UPDATE_STRATEGY if your approach needs changing
+- BREAK if you need to rest
+
+What do you do next?"""
+
     try:
         decision_text = ask_mistral(prompt)
     except Exception as e:
-        decision_text = "ACTION: SKIP\nREASON: API error"
+        decision_text = "ACTION: THINK\nREASON: Error"
     
     decision = parse_decision(decision_text)
+    decision["category"] = state.get("category", "")
     
-    # Step 4: Execute or visit station
-    if decision["action"] in ["buy_yes", "buy_no", "sell"]:
-        move_to("center_screen", state, "trading", f"Placing: {decision['action']} — {decision['reason'][:50]}")
+    # Step 4: Execute
+    thought = decision.get("reason", "Processing...")
+    
+    if decision["action"] in ["bet_yes", "bet_no"]:
+        move_to("center_screen", state, "trading", thought[:50])
         save_state(state)
         time.sleep(1)
-        result = execute_paper_trade(state, decision, markets)
+        result = execute_trade(state, decision["action"], decision["target"], decision["amount"], markets)
         state["last_action"] = result
         state["thought"] = result
+        record_decision(decision, decision["target"])
+    
+    elif decision["action"] == "sell":
+        move_to("center_screen", state, "selling", thought[:50])
+        save_state(state)
+        result = execute_trade(state, "sell", decision["target"], 0, markets)
+        state["last_action"] = result
+        state["thought"] = result
+    
     elif decision["action"] == "research":
-        move_to("whiteboard", state, "researching", f"Researching: {decision['market'][:50] or 'market trends'}")
-        state["thought"] = decision.get("reason", "Deep-diving into event data...")
-    else:
-        # Vary station based on cycle
-        stations = ["whiteboard", "right_monitor", "server", "coffee", "center"]
-        station = stations[cycle % len(stations)]
-        mood_map = {"whiteboard": "analyzing", "right_monitor": "checking", 
-                    "server": "diagnostics", "coffee": "resting", "center": "thinking"}
-        move_to(station, state, mood_map.get(station, "idle"), decision.get("reason", "Considering next move..."))
+        move_to("whiteboard", state, "researching", f"Researching: {decision['target'][:40]}")
+        save_state(state)
+        # Actually research via web
+        research_result = search_web(decision["target"] or "prediction markets")
+        state["research_cache"][decision["target"][:30]] = research_result[:200]
+        state["thought"] = f"Found info: {research_result[:60]}"
+    
+    elif decision["action"] == "update_strategy":
+        move_to("server", state, "self-modifying", "Updating my own strategy...")
+        save_state(state)
+        new_strat = self_modify_strategy(thought)
+        state["thought"] = f"Strategy updated: {new_strat['risk_tolerance']}"
+    
+    elif decision["action"] == "break":
+        move_to("coffee", state, "resting", "Taking a break...")
+        save_state(state)
+        time.sleep(3)
+        state["thought"] = "Refreshed and ready."
+    
+    elif decision["action"] == "scan":
+        # Discover new categories
+        new_cat = random.choice(["science", "entertainment", "crypto", "politics", "sports"])
+        if new_cat not in state["discovered_categories"]:
+            state["discovered_categories"].append(new_cat)
+        state["category"] = new_cat
+        move_to("left_monitor", state, "scanning", f"Scanning {new_cat} markets...")
+        state["thought"] = f"Exploring {new_cat} category..."
+    
+    else:  # think
+        stations = ["whiteboard", "right_monitor", "center", "server"]
+        station = random.choice(stations)
+        mood_map = {"whiteboard": "analyzing", "right_monitor": "checking", "center": "thinking", "server": "diagnostics"}
+        move_to(station, state, mood_map.get(station, "idle"), thought[:50])
     
     state["_last_station"] = state["current_station"]
     save_state(state)
     
     # Print summary
-    positions_val = sum(p.get("value", 0) for p in state["positions"].values())
-    print(f"  Cycle {cycle} | {state['category']} | {len(markets)} markets | {len(state['positions'])} positions")
-    print(f"  Cash: ${state['cash']:.2f} | Positions: ${positions_val:.2f} | Total: ${state['portfolio_value']:.2f}")
-    print(f"  Station: {state['current_station']} | {decision['action']} | {state['thought'][:60]}")
+    pos_count = len(state["positions"])
+    print(f"  Cycle {cycle} | {state['category']} | {len(markets)} markets | {pos_count} positions")
+    print(f"  Cash: ${state['cash']:.2f} | Portfolio: ${state['portfolio_value']:.2f} | PnL: ${state['pnl']:+.2f}")
+    print(f"  Action: {decision['action']} | Station: {state['current_station']}")
+    print(f"  Thought: {state['thought'][:70]}")
 
 if __name__ == "__main__":
     run_one_cycle()

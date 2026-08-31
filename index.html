@@ -273,7 +273,7 @@
                 let html = '<div style="color:#448aff;margin-bottom:2px">POLYMARKET</div>';
                 markets.slice(0, 4).forEach(m => {
                     const yes = (m.yes * 100).toFixed(0);
-                    const no = (m.no * 100).toFixed(0);
+                    const no = ((1 - m.yes) * 100).toFixed(0);
                     html += '<div style="margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + 
                             m.q.substring(0, 28) + '</div>';
                     html += '<div style="color:#00e676;font-size:4px">YES ' + yes + '% | NO ' + no + '%</div>';
