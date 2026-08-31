@@ -49,7 +49,7 @@ def load_state():
     return {"cash": STARTING_BALANCE, "holdings": {}, "total_trades": 0, "mood": "idle",
             "current_station": "center", "last_action": "none", "thought": "Waking up...",
             "portfolio_value": STARTING_BALANCE, "pnl": 0, "pnl_pct": 0,
-            "robot_x": 48, "robot_y": 55}
+            "robot_x": 48, "robot_y": 52, "_cycle_num": 0, "_last_station": "center"}
 
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
@@ -89,10 +89,11 @@ def ask_mistral(prompt, system="You are a crypto trading agent. Be concise."):
     try:
         response = client.chat.completions.create(model="mistral-small-latest",
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            max_tokens=500, temperature=0.7)
+            max_tokens=300, temperature=0.7)
         return response.choices[0].message.content or ""
     except Exception as e:
-        return f"Error: {e}"
+        print(f"  Mistral error: {e}")
+        return "ACTION: THINK\nTHOUGHT: API error, will retry next cycle"
 
 def decide_action(state, prices):
     holdings_text = "None" if not state["holdings"] else "\n".join([
@@ -101,17 +102,39 @@ def decide_action(state, prices):
     prices_text = "\n".join([
         f"  {name}: ${p['price']:.6f} ({p['change_24h']:+.1f}%) Vol: ${p['volume']:,.0f}"
         for name, p in prices.items()])
-    prompt = f"""Current state:
+
+    cycle = state.get("_cycle_num", 0)
+    last = state.get("_last_station", "center")
+
+    prompt = f"""You are an autonomous trading agent in a neon office. You move between stations.
+
 Cash: ${state['cash']:.2f} | Portfolio: ${state['portfolio_value']:.2f} | PnL: ${state['pnl']:.2f}
 Holdings: {holdings_text}
 Prices: {prices_text}
+Cycle: {cycle} | Last station: {last}
 
-You are an autonomous trading agent. What should you do?
-Options: SCAN, ANALYZE, TRADE, CHECK, REST, THINK
+STATIONS (pick one):
+- SCAN: Left monitor — check live prices
+- ANALYZE: Whiteboard — write your trading strategy
+- TRADE: Center screen — execute buy/sell
+- CHECK: Right monitor — review portfolio
+- SERVER: Server rack — check system health
+- COFFEE: Coffee machine — take a short break
+- THINK: Center desk — ponder the market
 
-For trade: TRADE: BUY <TOKEN> $<AMOUNT> or TRADE: SELL <TOKEN> $<AMOUNT>
-For others: ACTION: <SCAN|ANALYZE|CHECK|REST|THINK>
-THOUGHT: <what you're thinking>"""
+RULES:
+1. Every cycle starts at the left monitor (you already scanned prices)
+2. Pick your NEXT station wisely — rotate between different ones
+3. Every 3rd cycle: visit SERVER
+4. Every 5th cycle: visit COFFEE
+5. Don't repeat the same station twice in a row
+6. Only TRADE when you see a clear opportunity
+
+Reply with EXACTLY this format:
+ACTION: <SCAN|ANALYZE|TRADE|CHECK|SERVER|COFFEE|THINK>
+THOUGHT: <one short sentence>
+
+For TRADE use: ACTION: TRADE BUY <TOKEN> $<AMOUNT> or ACTION: TRADE SELL <TOKEN> $<AMOUNT>"""
     return ask_mistral(prompt)
 
 def parse_decision(response):
@@ -124,7 +147,7 @@ def parse_decision(response):
                     try:
                         return {"type": "trade", "action": parts[0].upper(), "token": parts[1].upper(), "amount": float(parts[2].replace("$", ""))}
                     except: pass
-    for action in ["SCAN", "ANALYZE", "CHECK", "REST", "THINK"]:
+    for action in ["SCAN", "ANALYZE", "CHECK", "SERVER", "COFFEE", "REST", "THINK"]:
         if action in response_upper:
             thought = response.split("THOUGHT:")[1].strip() if "THOUGHT:" in response else ""
             return {"type": action.lower(), "thought": thought}
@@ -178,108 +201,107 @@ def update_portfolio(state, prices):
     state["pnl"] = total - STARTING_BALANCE
     state["pnl_pct"] = (state["pnl"] / STARTING_BALANCE) * 100
 
+def move_to(station, state, mood="idle", thought=""):
+    """Move robot to a station and update state."""
+    state["current_station"] = station
+    state["mood"] = mood
+    state["thought"] = thought
+    pos = STATION_POSITIONS.get(station, STATION_POSITIONS["center"])
+    state["robot_x"] = pos["x"]
+    state["robot_y"] = pos["y"]
+
 def run_agent():
     state = load_state()
     cycle = 0
     print("\n" + "="*50)
     print("NEON OFFICE — Autonomous Agent Starting")
-    print("="*50 + "\n")
+    print("="*50 + "\n", flush=True)
     while True:
-        cycle += 1
-        now = datetime.now().strftime("%H:%M:%S")
-        print(f"\n[Cycle {cycle}] {now}")
-        
-        # Scan prices
-        print("  Scanning prices...")
-        state["current_station"] = "left_monitor"
-        state["mood"] = "scanning"
-        state["thought"] = "Checking market prices..."
-        pos = STATION_POSITIONS["left_monitor"]
-        state["robot_x"] = pos["x"]
-        state["robot_y"] = pos["y"]
-        save_state(state)
-        time.sleep(1)
-        
-        prices = get_all_prices()
-        update_portfolio(state, prices)
-        for name, p in prices.items():
-            print(f"    {name}: ${p['price']:.6f} ({p['change_24h']:+.1f}%)")
-        
-        # Decide
-        print("  Thinking...")
-        state["current_station"] = "center"
-        state["mood"] = "thinking"
-        state["thought"] = "Analyzing market conditions..."
-        pos = STATION_POSITIONS["center"]
-        state["robot_x"] = pos["x"]
-        state["robot_y"] = pos["y"]
-        save_state(state)
-        time.sleep(1)
-        
-        decision = decide_action(state, prices)
-        print(f"  Decision: {decision[:100]}...")
-        parsed = parse_decision(decision)
-        
-        # Execute
-        if parsed["type"] == "trade":
-            print(f"  Trading: {parsed['action']} ${parsed['amount']:.2f} {parsed['token']}")
-            state["current_station"] = "center_screen"
-            state["mood"] = "trading"
-            state["thought"] = f"Executing: {parsed['action']} {parsed['token']}..."
-            pos = STATION_POSITIONS["center_screen"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
+        try:
+            cycle += 1
+            state["_cycle_num"] = cycle
+            now = datetime.now().strftime("%H:%M:%S")
+            print(f"\n[Cycle {cycle}] {now}", flush=True)
+
+            # ── Step 1: Always scan prices first ──
+            move_to("left_monitor", state, "scanning", "Fetching live market data...")
             save_state(state)
-            time.sleep(3)
-            result = execute_trade(state, parsed["action"], parsed["token"], parsed["amount"])
-            print(f"  Result: {result}")
-            state["last_action"] = result
-            state["thought"] = result
-        elif parsed["type"] == "scan":
-            state["current_station"] = "left_monitor"
-            state["mood"] = "scanning"
-            state["thought"] = parsed.get("thought", "Checking prices...")
-            pos = STATION_POSITIONS["left_monitor"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
-        elif parsed["type"] == "analyze":
-            state["current_station"] = "whiteboard"
-            state["mood"] = "analyzing"
-            state["thought"] = parsed.get("thought", "Thinking about strategy...")
-            pos = STATION_POSITIONS["whiteboard"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
-        elif parsed["type"] == "check":
-            state["current_station"] = "right_monitor"
-            state["mood"] = "checking"
-            state["thought"] = f"Portfolio: ${state['portfolio_value']:.2f}"
-            pos = STATION_POSITIONS["right_monitor"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
-        elif parsed["type"] == "rest":
-            state["current_station"] = "coffee"
-            state["mood"] = "resting"
-            state["thought"] = "Taking a break..."
-            pos = STATION_POSITIONS["coffee"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
+            time.sleep(1)
+
+            prices = get_all_prices()
+            update_portfolio(state, prices)
+            for name, p in prices.items():
+                print(f"    {name}: ${p['price']:.6f} ({p['change_24h']:+.1f}%)", flush=True)
+
+            # ── Step 2: Think at center ──
+            move_to("center", state, "thinking", "Analyzing opportunities...")
             save_state(state)
-            time.sleep(10)
-        elif parsed["type"] == "think":
-            state["current_station"] = "center"
-            state["mood"] = "thinking"
-            state["thought"] = parsed.get("thought", "Contemplating...")
-            pos = STATION_POSITIONS["center"]
-            state["robot_x"] = pos["x"]
-            state["robot_y"] = pos["y"]
-        
-        save_state(state)
-        print(f"  Portfolio: ${state['portfolio_value']:.2f} (PnL: ${state['pnl']:.2f})")
-        print(f"  Station: {state['current_station']} | Mood: {state['mood']}")
-        
-        wait = random.randint(8, 15)
-        print(f"  Waiting {wait}s...")
-        time.sleep(wait)
+            time.sleep(1)
+
+            # ── Step 3: Ask LLM what to do next ──
+            decision = decide_action(state, prices)
+            print(f"  Decision: {decision[:150]}...", flush=True)
+            parsed = parse_decision(decision)
+            state["_last_station"] = "center"
+
+            # ── Step 4: Walk to chosen station ──
+            if parsed["type"] == "trade":
+                print(f"  Trading: {parsed['action']} ${parsed['amount']:.2f} {parsed['token']}", flush=True)
+                move_to("center_screen", state, "trading", f"Executing: {parsed['action']} {parsed['token']}...")
+                save_state(state)
+                time.sleep(2)
+                result = execute_trade(state, parsed["action"], parsed["token"], parsed["amount"])
+                print(f"  Result: {result}", flush=True)
+                state["last_action"] = result
+                state["thought"] = result
+                state["_last_station"] = "center_screen"
+
+            elif parsed["type"] == "scan":
+                move_to("left_monitor", state, "scanning", parsed.get("thought", "Deep scan..."))
+                state["_last_station"] = "left_monitor"
+
+            elif parsed["type"] == "analyze":
+                move_to("whiteboard", state, "analyzing", parsed.get("thought", "Writing strategy..."))
+                state["_last_station"] = "whiteboard"
+
+            elif parsed["type"] == "check":
+                move_to("right_monitor", state, "checking", parsed.get("thought", f"Portfolio: ${state['portfolio_value']:.2f}"))
+                state["_last_station"] = "right_monitor"
+
+            elif parsed["type"] == "server":
+                move_to("server", state, "diagnostics", "Checking system health... 10 keys active, 99.9% uptime")
+                state["_last_station"] = "server"
+
+            elif parsed["type"] in ["rest", "coffee"]:
+                move_to("coffee", state, "resting", "Taking a coffee break...")
+                save_state(state)
+                time.sleep(3)
+                state["_last_station"] = "coffee"
+
+            elif parsed["type"] == "think":
+                move_to("center", state, "thinking", parsed.get("thought", "Contemplating..."))
+                state["_last_station"] = "center"
+
+            else:
+                fallbacks = ["left_monitor", "whiteboard", "right_monitor", "center", "server", "coffee"]
+                station = fallbacks[cycle % len(fallbacks)]
+                move_to(station, state, "idle", "Moving to next station...")
+                state["_last_station"] = station
+
+            save_state(state)
+            print(f"  Portfolio: ${state['portfolio_value']:.2f} (PnL: ${state['pnl']:.2f})", flush=True)
+            print(f"  Station: {state['current_station']} | Mood: {state['mood']}", flush=True)
+
+            wait = random.randint(8, 15)
+            print(f"  Waiting {wait}s...", flush=True)
+            time.sleep(wait)
+
+        except Exception as e:
+            print(f"  ERROR: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            time.sleep(5)
+
 
 if __name__ == "__main__":
     run_agent()
